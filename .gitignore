@@ -1,0 +1,13 @@
+.venv/
+
+# Contains real bucket names — copy from mailboxes.example.json
+mailboxes.json
+
+# Cached senders and subjects of real mail
+.index-*.json
+.index.json
+
+# Request logs
+reader-*.log
+
+__pycache__/

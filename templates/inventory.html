@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Sender inventory — {{ mb.label }}{% endblock %}
+{% block content %}
+<main class="page">
+  <h1>Sender inventory</h1>
+  <p class="lede">Every domain that sent mail to
+    {% if address %}<strong>{{ address }}</strong>{% else %}this mailbox{% endif %},
+    across {{ total }} message{{ '' if total == 1 else 's' }} in {{ mb.label }}.
+    Each one is a service that may still have the address on file — check whether
+    it can be used to reset the account.</p>
+  <table class="inventory">
+    <thead>
+      <tr><th>Domain</th><th>Msgs</th><th>Last seen</th><th>Sample subjects</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="domain">
+          {{ r.domain }}
+          <div class="senders">{% for s in r.senders %}{{ s }}<br>{% endfor %}</div>
+        </td>
+        <td class="num">{{ r.count }}</td>
+        <td class="num">{{ r.latest|shortdate }}</td>
+        <td class="subjects">{% for s in r.subjects %}<div>{{ s }}</div>{% endfor %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No messages.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</main>
+{% endblock %}

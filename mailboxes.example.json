@@ -1,0 +1,20 @@
+[
+  {
+    "id": "live",
+    "label": "example.com (live)",
+    "bucket": "example-mail",
+    "prefix": "inbox/"
+  },
+  {
+    "id": "sent",
+    "label": "example.com (sent)",
+    "bucket": "example-mail",
+    "prefix": "sent/"
+  },
+  {
+    "id": "archive",
+    "label": "old-domain (archive)",
+    "bucket": "old-domain-mail",
+    "prefix": ""
+  }
+]

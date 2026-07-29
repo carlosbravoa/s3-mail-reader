@@ -1,0 +1,5 @@
+Flask==3.1.3
+boto3==1.43.58
+bleach[css]==6.4.0
+# Needed by botocore for some credential providers (e.g. SSO/login).
+botocore[crt]==1.43.58

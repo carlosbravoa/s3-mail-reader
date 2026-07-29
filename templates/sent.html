@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Sent' if ok else 'Not sent' }}{% endblock %}
+{% block content %}
+<main class="page">
+  {% if ok %}
+  <h1>Sent</h1>
+  <p class="lede">Your reply went to <strong>{{ to_addr }}</strong>, and a copy is
+    filed under the <code>sent/</code> prefix.</p>
+  {% else %}
+  <h1>Not sent</h1>
+  <p class="warnbox">{{ error }}</p>
+  <p class="lede">If this mentions verification or the sandbox, the recipient is
+    not a verified identity and the account still needs SES production access.</p>
+  {% endif %}
+  <p><a href="{{ url_for('inbox', **nav(mb)) }}">Back to the inbox</a></p>
+</main>
+{% endblock %}

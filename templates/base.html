@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}S3 Mail{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('inbox', **nav(mb)) }}">S3 Mail</a>
+
+    <form class="filters" action="{{ request.path }}" method="get">
+      <select name="mb" data-autosubmit title="Mailbox">
+        {% for box in mailboxes %}
+        <option value="{{ box.id }}" {{ 'selected' if box.id == mb.id }}>{{ box.label }}</option>
+        {% endfor %}
+      </select>
+
+      <select name="to" data-autosubmit title="Recipient address">
+        <option value="">All addresses</option>
+        {% for addr, count in addresses %}
+        <option value="{{ addr }}" {{ 'selected' if addr == address }}>{{ addr }} ({{ count }})</option>
+        {% endfor %}
+      </select>
+
+      <input type="search" name="q" placeholder="Search sender or subject"
+             value="{{ query|default('', true) }}" autocomplete="off">
+    </form>
+
+    <nav>
+      <a href="{{ url_for('inbox', **nav(mb, to=address)) }}">Inbox</a>
+      <a href="{{ url_for('inventory', **nav(mb, to=address)) }}">Inventory</a>
+      <a href="{{ url_for('refresh', **nav(mb)) }}">Refresh</a>
+    </nav>
+  </header>
+
+  {% block content %}{% endblock %}
+
+  <script>
+    // Switching mailbox invalidates the address filter, since the addresses
+    // belong to the mailbox you are leaving.
+    document.querySelectorAll('[data-autosubmit]').forEach(function (el) {
+      el.addEventListener('change', function () {
+        if (el.name === 'mb') {
+          el.form.querySelector('[name=to]').value = '';
+        }
+        el.form.submit();
+      });
+    });
+  </script>
+</body>
+</html>

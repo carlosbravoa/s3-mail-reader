@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}{{ mb.label }} — {{ entries|length }}{% endblock %}
+{% block content %}
+<main class="split">
+  <section class="list">
+    {% if request.args.get('deleted') %}
+    <div class="banner">
+      {{ request.args.get('deleted') }} message{{ '' if request.args.get('deleted') == '1' else 's' }}
+      deleted — recoverable from S3 for 30 days.
+    </div>
+    {% endif %}
+    {% if request.args.get('new') %}
+    <div class="banner">{{ request.args.get('new') }} new message{{ '' if request.args.get('new') == '1' else 's' }}.</div>
+    {% endif %}
+
+    <form id="bulk" method="post" action="{{ url_for('delete_bulk') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="mb" value="{{ mb.id }}">
+      <input type="hidden" name="q" value="{{ query }}">
+      <input type="hidden" name="to" value="{{ address }}">
+
+      <div class="list-head">
+        <input type="checkbox" id="selall" title="Select all">
+        <span class="count">
+          {{ entries|length }} of {{ total }} message{{ '' if total == 1 else 's' }}
+          {%- if address %} to <strong>{{ address }}</strong>{% endif %}
+          {%- if query %} matching “{{ query }}”{% endif %}
+          {%- if address or query %}
+            <a class="clear" href="{{ url_for('inbox', **nav(mb)) }}">clear</a>
+          {%- endif %}
+        </span>
+        <button type="submit" class="bulk-delete" disabled>Delete</button>
+        <button type="button" class="pick-toggle">Select</button>
+      </div>
+
+      <ul>
+        {% for e in entries %}
+        <li class="{{ 'selected' if e.key == selected_key }}">
+          <input type="checkbox" class="pick" name="keys" value="{{ e.key }}"
+                 aria-label="Select message from {{ e.from_addr }}">
+          <a href="{{ url_for('inbox', **nav(mb, q=query, to=address, sel=e.key)) }}">
+            <div class="row">
+              <span class="from">{{ e.from_name or e.from_addr or '(no sender)' }}</span>
+              <span class="date">{{ e.date|shortdate }}</span>
+            </div>
+            <div class="subject">{{ e.subject }}</div>
+            <div class="meta">
+              {%- if not address and e.recipient %}<span class="tag to">{{ e.recipient }}</span> {% endif -%}
+              {{ e.from_addr }}
+              {%- if e.multipart %} · <span class="tag">attachment</span>{% endif %}
+              {%- if e.spam == 'FAIL' %} · <span class="tag warn">spam</span>{% endif %}
+              {%- if e.virus == 'FAIL' %} · <span class="tag warn">virus</span>{% endif %}
+            </div>
+          </a>
+        </li>
+        {% else %}
+        <li class="empty">No messages.</li>
+        {% endfor %}
+      </ul>
+    </form>
+  </section>
+
+  <section class="reader">
+    {% if message %}
+    {% set e = message.entry %}
+    <div class="headers">
+      <h1>{{ e.subject }}</h1>
+      <dl>
+        <dt>From</dt><dd>{{ e.from_name }} &lt;{{ e.from_addr }}&gt;</dd>
+        <dt>To</dt><dd>{{ e.to }}</dd>
+        {% if e.recipient %}
+        <dt>Delivered</dt>
+        <dd><a href="{{ url_for('inbox', **nav(mb, to=e.recipient)) }}">{{ e.recipient }}</a></dd>
+        {% endif %}
+        {% if message.cc %}<dt>Cc</dt><dd>{{ message.cc }}</dd>{% endif %}
+        {% if message.reply_to %}<dt>Reply-To</dt><dd>{{ message.reply_to }}</dd>{% endif %}
+        <dt>Date</dt><dd>{{ e.date|shortdate }}
+          {%- if not e.date_from_header %} <span class="tag">S3 timestamp</span>{% endif %}</dd>
+      </dl>
+      <div class="actions">
+        {% if message.allow_images %}
+          <a href="{{ url_for('inbox', **nav(mb, q=query, to=address, sel=e.key)) }}">Block images</a>
+        {% else %}
+          <a href="{{ url_for('inbox', **nav(mb, q=query, to=address, sel=e.key, images=1)) }}">Load remote images</a>
+        {% endif %}
+        <a href="{{ url_for('reply_form', key=e.key, mb=mb.id) }}">Reply</a>
+        <a href="{{ url_for('raw_source', key=e.key, mb=mb.id) }}" target="_blank">View source</a>
+        <form class="delete" method="post" action="{{ url_for('delete_message') }}"
+              onsubmit="return confirm('Delete this message?\n\nIt stays recoverable in S3 for 30 days.')">
+          <input type="hidden" name="csrf" value="{{ csrf_token }}">
+          <input type="hidden" name="mb" value="{{ mb.id }}">
+          <input type="hidden" name="key" value="{{ e.key }}">
+          <input type="hidden" name="q" value="{{ query }}">
+          <input type="hidden" name="to" value="{{ address }}">
+          <button type="submit">Delete</button>
+        </form>
+        <span class="size">{{ e.size|humansize }}</span>
+      </div>
+      {% if message.attachments %}
+      <div class="attachments">
+        {% for a in message.attachments %}
+        <a href="{{ url_for('attachment', key=e.key, idx=a.idx, mb=mb.id) }}">
+          {{ a.filename }} <span class="size">({{ a.size|humansize }})</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if not message.allow_images %}
+      <p class="notice">Remote images are blocked. Loading them tells the sender
+        you opened this message.</p>
+      {% endif %}
+    </div>
+    <iframe class="body" sandbox="allow-popups allow-popups-to-escape-sandbox"
+            src="{{ url_for('message_body', key=e.key, mb=mb.id, images=1 if message.allow_images else None) }}"></iframe>
+    {% else %}
+    <div class="placeholder">Select a message.</div>
+    {% endif %}
+  </section>
+</main>
+
+<script>
+  (function () {
+    var form = document.getElementById('bulk');
+    if (!form) return;
+    var list = form.closest('.list');
+    var all = document.getElementById('selall');
+    var picks = Array.prototype.slice.call(form.querySelectorAll('.pick'));
+    var del = form.querySelector('.bulk-delete');
+    var toggle = form.querySelector('.pick-toggle');
+    var KEY = 'mailreader:picking';
+
+    function chosen() { return picks.filter(function (p) { return p.checked; }); }
+
+    function sync() {
+      var n = chosen().length;
+      del.disabled = n === 0;
+      del.textContent = n ? 'Delete ' + n : 'Delete';
+      all.checked = n > 0 && n === picks.length;
+      all.indeterminate = n > 0 && n < picks.length;
+    }
+
+    function setPicking(on) {
+      list.classList.toggle('picking', on);
+      toggle.textContent = on ? 'Cancel' : 'Select';
+      if (!on) {
+        picks.forEach(function (p) { p.checked = false; });
+      }
+      // Survive the redirect after a delete, so you can keep going.
+      try { on ? sessionStorage.setItem(KEY, '1') : sessionStorage.removeItem(KEY); }
+      catch (e) {}
+      sync();
+    }
+
+    toggle.addEventListener('click', function () {
+      setPicking(!list.classList.contains('picking'));
+    });
+
+    all.addEventListener('change', function () {
+      picks.forEach(function (p) { p.checked = all.checked; });
+      sync();
+    });
+    picks.forEach(function (p) { p.addEventListener('change', sync); });
+
+    // While selecting, clicking a row picks it rather than opening it.
+    form.querySelectorAll('li').forEach(function (li) {
+      var link = li.querySelector('a');
+      var box = li.querySelector('.pick');
+      if (!link || !box) return;
+      link.addEventListener('click', function (ev) {
+        if (!list.classList.contains('picking')) return;
+        ev.preventDefault();
+        box.checked = !box.checked;
+        sync();
+      });
+    });
+
+    form.addEventListener('submit', function (ev) {
+      var n = chosen().length;
+      if (!n || !confirm('Delete ' + n + ' message' + (n === 1 ? '' : 's') +
+                         '?\n\nThey stay recoverable in S3 for 30 days.')) {
+        ev.preventDefault();
+      }
+    });
+
+    var wasPicking = false;
+    try { wasPicking = sessionStorage.getItem(KEY) === '1'; } catch (e) {}
+    setPicking(wasPicking);
+  })();
+</script>
+{% endblock %}
