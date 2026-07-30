@@ -7,6 +7,9 @@ message you explicitly ask it to delete.
 Needs `s3:ListBucket`, `s3:GetObject` and — for the delete button —
 `s3:DeleteObject` on the target buckets.
 
+Don't have the SES side set up yet? **[SES-SETUP.md](SES-SETUP.md)** is a runbook
+for pointing a domain's mail at an S3 bucket from scratch.
+
 ## Setup
 
 ```bash
