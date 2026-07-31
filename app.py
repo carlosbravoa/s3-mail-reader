@@ -270,8 +270,13 @@ class Mailbox:
         self.prefix = spec.get("prefix", "")
         slug = re.sub(r"[^\w.\-]", "_", f"{self.bucket}-{self.prefix}".strip("-"))
         self.index_path = HERE / f".index-{slug}.json"
+        self.read_path = HERE / f".read-{slug}.json"
         self._index = None
+        self._read = None
         self._lock = threading.Lock()
+        # Separate from _lock: read_keys() calls get_index(), and threading.Lock
+        # is not reentrant, so sharing one would deadlock on first use.
+        self._read_lock = threading.Lock()
 
     # -- indexing ----------------------------------------------------------
 
@@ -378,6 +383,51 @@ class Mailbox:
             if self._index is not None:
                 self._index = [e for e in self._index if e["key"] != key]
                 self.index_path.write_text(json.dumps(self._index, indent=1))
+        # Otherwise the read set grows forever with keys that no longer exist.
+        if self._read is not None and key in self._read:
+            with self._read_lock:
+                self._read.discard(key)
+                self._write_read()
+
+    # -- read state --------------------------------------------------------
+    #
+    # S3 holds the mail and nothing else, so "have I seen this?" has to live
+    # here. A key set per mailbox, next to the index cache.
+
+    def read_keys(self):
+        if self._read is None:
+            with self._read_lock:
+                if self._read is None:
+                    if self.read_path.exists():
+                        try:
+                            self._read = set(json.loads(self.read_path.read_text()))
+                        except Exception:
+                            self._read = set()
+                    else:
+                        # First run counts everything already in the bucket as
+                        # seen. Otherwise a years-old archive opens with every
+                        # message shouting for attention, which teaches you to
+                        # ignore the marker on the day it finally means something.
+                        self._read = {e["key"] for e in self.get_index()}
+                        self._write_read()
+        return self._read
+
+    def _write_read(self):
+        try:
+            self.read_path.write_text(json.dumps(sorted(self._read)))
+        except OSError:
+            pass  # a lost read marker is not worth failing a page render over
+
+    def mark_read(self, key):
+        if key in self.read_keys():
+            return
+        with self._read_lock:
+            self._read.add(key)
+            self._write_read()
+
+    def unread_count(self, entries):
+        seen = self.read_keys()
+        return sum(1 for e in entries if e["key"] not in seen)
 
     def addresses(self):
         """Recipient addresses present in this mailbox, most mail first."""
@@ -573,11 +623,17 @@ def inbox():
                    or needle in e["from_addr"].lower()
                    or needle in e["from_name"].lower()]
 
+    # Snapshot before opening the message, so the one being read still shows as
+    # unread on this render and only turns plain on the next.
+    read = set(mb.read_keys())
+    unread = mb.unread_count(entries)
+
     message = None
     if selected_key:
         entry = mb.get_entry(selected_key)
         if entry is None:
             abort(404)
+        mb.mark_read(selected_key)
         msg = parse_full(mb.bucket, selected_key)
         html, _text = extract_bodies(msg)
         message = {
@@ -593,6 +649,7 @@ def inbox():
         "inbox.html", entries=entries, query=query, address=address,
         selected_key=selected_key, message=message, total=total,
         mailboxes=MAILBOXES, mb=mb, addresses=mb.addresses(), nav=_nav,
+        read=read, unread=unread,
     )
 
 

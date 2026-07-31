@@ -107,7 +107,8 @@ archive have a usable one. Fallback dates are tagged in the UI.
 ## Views
 
 - **Inbox** — two-pane list and reader. Filters compose: mailbox, then recipient
-  address, then a sender/subject search.
+  address, then a sender/subject search. Unread mail is bold, marked with a dot
+  and an accent stripe, and counted in the list header.
 - **Inventory** — senders grouped by domain, honouring the same filters. Written
   for account auditing: each domain is a service that may still have the address
   on file.
@@ -127,6 +128,24 @@ JSON equivalent of the Refresh button, for scripting.
 
 A full re-read of every header (`get_index(force=True)`) is only for when the
 parsing code itself changes; deleting the `.index-*.json` files achieves the same.
+
+## Unread
+
+S3 stores the mail and nothing else, so "have I seen this?" has to be kept by the
+reader. Each mailbox gets a `.read-<bucket>.json` beside its index, holding the
+keys already opened. A message is marked read when you open it, and the marker is
+dropped again when the message is deleted so the file cannot grow forever.
+
+**The first run counts everything already in the bucket as read.** Otherwise a
+years-old archive opens with hundreds of messages demanding attention, which
+teaches you to ignore the marker before it ever means anything. Only mail that
+arrives afterwards shows up as new. To start over, delete the `.read-*.json` file
+— every message then reads as unread.
+
+The state is per-instance, not per-browser: it lives with the service, so a reader
+on the always-on machine shows the same unread set to every device that opens it.
+Distinction is carried by weight and a dot rather than colour alone, so it survives
+for anyone who cannot pick the accent out.
 
 ## Deleting
 

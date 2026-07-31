@@ -22,6 +22,7 @@
       <div class="list-head">
         <input type="checkbox" id="selall" title="Select all">
         <span class="count">
+          {%- if unread %}<strong class="unread-count">{{ unread }} new</strong> · {% endif -%}
           {{ entries|length }} of {{ total }} message{{ '' if total == 1 else 's' }}
           {%- if address %} to <strong>{{ address }}</strong>{% endif %}
           {%- if query %} matching “{{ query }}”{% endif %}
@@ -39,11 +40,12 @@
 
       <ul>
         {% for e in entries %}
-        <li class="{{ 'selected' if e.key == selected_key }}">
+        <li class="{{ 'selected' if e.key == selected_key }} {{ 'unread' if e.key not in read }}">
           <input type="checkbox" class="pick" name="keys" value="{{ e.key }}"
                  aria-label="Select message from {{ e.from_addr }}">
           <a href="{{ url_for('inbox', **nav(mb, q=query, to=address, sel=e.key)) }}">
             <div class="row">
+              {%- if e.key not in read %}<span class="new-dot" title="Unread" aria-label="Unread"></span>{% endif %}
               <span class="from">{{ e.from_name or e.from_addr or '(no sender)' }}</span>
               <span class="date">{{ e.date|shortdate }}</span>
             </div>

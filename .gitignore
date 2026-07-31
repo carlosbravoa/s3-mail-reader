@@ -7,6 +7,9 @@ mailboxes.json
 .index-*.json
 .index.json
 
+# Which messages have been opened
+.read-*.json
+
 # Request logs
 reader-*.log
 

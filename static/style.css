@@ -11,31 +11,38 @@
   --muted: #6b6b76;
   --accent: #2f6feb;
   --warn: #b23c17;
+  /* Controls read as controls: a surface of their own, never transparent. */
+  --btn: #ffffff;
+  --btn-hover: #eef1f6;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #16171a;
-    --panel: #1d1e22;
-    --border: #2e3036;
-    --text: #e6e6ea;
-    --muted: #9a9aa5;
-    --accent: #6ea0ff;
-    --warn: #e0805a;
+    --bg: #111827;
+    --panel: #1f2937;
+    --border: #374151;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --accent: #60a5fa;
+    --warn: #f87171;
+    --btn: #374151;
+    --btn-hover: #4b5563;
   }
 }
 
 /* Must follow the media query: identical specificity, so source order decides. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #16171a;
-  --panel: #1d1e22;
-  --border: #2e3036;
-  --text: #e6e6ea;
-  --muted: #9a9aa5;
-  --accent: #6ea0ff;
-  --warn: #e0805a;
+  --bg: #111827;
+  --panel: #1f2937;
+  --border: #374151;
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --accent: #60a5fa;
+  --warn: #f87171;
+  --btn: #374151;
+  --btn-hover: #4b5563;
 }
 
 * { box-sizing: border-box; }
@@ -78,13 +85,13 @@ a:hover { text-decoration: underline; }
   padding: 4px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--bg);
-  color: var(--muted);
+  background: var(--btn);
+  color: var(--text);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
 }
-.theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
+.theme-toggle:hover { background: var(--btn-hover); color: var(--accent); border-color: var(--accent); }
 
 /* ---- two-pane layout ---- */
 .split {
@@ -117,11 +124,18 @@ a:hover { text-decoration: underline; }
   padding: 3px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--muted);
+  background: var(--btn);
+  color: var(--text);
   font-size: 12px;
+  font-weight: 500;
   white-space: nowrap;
 }
-.head-link:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+.head-link:hover {
+  background: var(--btn-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+  text-decoration: none;
+}
 /* Selecting messages is a mode; leaving it is the only other thing to do in it. */
 .picking .head-link { display: none; }
 
@@ -132,14 +146,15 @@ a:hover { text-decoration: underline; }
   padding: 3px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
+  background: var(--btn);
+  color: var(--text);
   font: inherit;
   font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
 }
-.pick-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.pick-toggle:hover { background: var(--btn-hover); border-color: var(--accent); color: var(--accent); }
 .bulk-delete { border-color: var(--warn); color: var(--warn); }
 .bulk-delete:hover:not(:disabled) { background: var(--warn); color: var(--bg); }
 .bulk-delete:disabled { opacity: .35; cursor: default; border-color: var(--border); color: var(--muted); }
@@ -151,6 +166,28 @@ a:hover { text-decoration: underline; }
 .list:not(.picking) li a { padding-left: 14px; }
 .list.picking li a { cursor: default; }
 .list.picking li:hover { background: var(--bg); }
+
+/* ---- unread ----
+   Gmail's convention: weight carries it, the dot confirms it. Not colour alone,
+   which disappears for anyone who cannot distinguish it. */
+.unread-count { color: var(--accent); font-weight: 600; }
+
+.new-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.list li.unread { border-left: 3px solid var(--accent); }
+.list li.unread .from,
+.list li.unread .subject { font-weight: 700; color: var(--text); }
+
+/* Read mail recedes, so unread does not have to shout to stand out. */
+.list li:not(.unread) { border-left: 3px solid transparent; }
+.list li:not(.unread) .from { font-weight: 500; }
+.list li:not(.unread) .subject { color: var(--muted); }
 
 .list ul { list-style: none; margin: 0; padding: 0; }
 .list li {
@@ -165,8 +202,8 @@ a:hover { text-decoration: underline; }
 .list li.selected { background: var(--bg); box-shadow: inset 3px 0 0 var(--accent); }
 .list li.empty { padding: 16px; color: var(--muted); }
 
-.row { display: flex; justify-content: space-between; gap: 10px; }
-.from { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.from { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .date { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .subject { margin: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meta { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -204,7 +241,7 @@ a:hover { text-decoration: underline; }
   padding: 3px 10px;
   border: 1px solid var(--warn);
   border-radius: 6px;
-  background: transparent;
+  background: var(--btn);
   color: var(--warn);
   font: inherit;
   font-size: 13px;
