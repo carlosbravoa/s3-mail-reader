@@ -33,6 +33,10 @@ HERE = Path(__file__).parent
 REGION = os.environ.get("MAIL_REGION", "us-east-1")
 PORT = int(os.environ.get("MAIL_PORT", "5000"))
 
+# 127.0.0.1 unless deliberately overridden. Any other value publishes the mail to
+# whoever can reach the port, because there is no authentication in front of it.
+HOST = os.environ.get("MAIL_HOST", "127.0.0.1")
+
 # SES prepends a large X-SES-RECEIPT blob, so give the header block room.
 HEADER_BYTES = 65536
 
@@ -52,9 +56,12 @@ def inject_csrf():
 def check_csrf():
     if not secrets.compare_digest(request.form.get("csrf", ""), CSRF_TOKEN):
         abort(403)
+    # Compare against the address this request actually arrived on, rather than a
+    # hardcoded 127.0.0.1: when MAIL_HOST publishes the app on a LAN address, the
+    # browser sends that address as the Origin and a fixed list would reject every
+    # delete and send.
     origin = request.headers.get("Origin")
-    if origin and origin not in (f"http://127.0.0.1:{PORT}",
-                                 f"http://localhost:{PORT}"):
+    if origin and origin.rstrip("/") != request.host_url.rstrip("/"):
         abort(403)
 
 # --------------------------------------------------------------------------
@@ -955,5 +962,9 @@ if __name__ == "__main__":
             print(f"  {problem['title']}: {problem['detail']}")
             if problem["command"]:
                 print(f"  {problem['command']}")
-    print(f"http://127.0.0.1:{PORT}")
-    app.run(host="127.0.0.1", port=PORT, debug=False)
+    if HOST not in ("127.0.0.1", "localhost", "::1"):
+        print(f"WARNING: listening on {HOST}, not just this machine. There is no "
+              f"authentication —\n         anyone who can reach port {PORT} can "
+              "read, delete and send your mail.")
+    print(f"http://{'127.0.0.1' if HOST == '0.0.0.0' else HOST}:{PORT}")
+    app.run(host=HOST, port=PORT, debug=False)

@@ -1,0 +1,38 @@
+[Unit]
+Description=S3 mail reader
+Documentation=https://github.com/carlosbravoa/s3-mail-reader
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mailreader
+Group=mailreader
+WorkingDirectory=/opt/mailreader
+ExecStart=/opt/mailreader/.venv/bin/python /opt/mailreader/app.py
+Restart=on-failure
+RestartSec=5s
+
+Environment=MAIL_REGION=us-east-1
+Environment=MAIL_PORT=5000
+# 127.0.0.1 keeps the reader on this machine, reachable over an SSH tunnel.
+# Setting 0.0.0.0 publishes it to everyone on the network, and the app has no
+# authentication whatsoever. Read the README before changing this.
+Environment=MAIL_HOST=127.0.0.1
+Environment=AWS_SHARED_CREDENTIALS_FILE=/etc/mailreader/credentials
+
+# The index cache is written next to app.py; nothing outside needs to be writable.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/mailreader
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

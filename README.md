@@ -83,6 +83,7 @@ Uses whatever credentials your AWS CLI already has.
 | `MAIL_PREFIX` | *(empty)* | Key prefix, e.g. `inbox/` |
 | `MAIL_REGION` | `us-east-1` | Bucket region |
 | `MAIL_PORT` | `5000` | Local port |
+| `MAIL_HOST` | `127.0.0.1` | Bind address. Anything else publishes your mail — see below |
 
 ## How it works
 
@@ -296,10 +297,19 @@ one, and inverting it turns hand-written colours in the HTML unreadable. The
 body is a sandboxed iframe with its own document, so it is themed separately by
 `templates/body.html` regardless.
 
+## Running it on another machine
+
+[`deploy/`](deploy/) has a systemd unit and a walkthrough: a dedicated IAM user
+scoped to the mail buckets and `SendRawEmail`, credentials outside the checkout,
+and a service that survives reboots.
+
 ## Notes
 
-- Bind address is deliberately `127.0.0.1`. There is no authentication, so do not
-  expose this port. Putting it on the internet means publishing your mail.
+- Bind address defaults to `127.0.0.1`. There is no authentication, so do not
+  expose this port. Putting it on the internet means publishing your mail, and
+  putting it on a shared LAN means publishing it to everyone on that LAN.
+  `MAIL_HOST` exists for people who have read that sentence and decided anyway;
+  an SSH tunnel gets you remote access without it.
 - `.index-*.json` holds senders and subjects in cleartext. It is gitignored.
 - Attachments and raw source are served with `X-Content-Type-Options: nosniff`.
   The content type comes from the message, so it is the sender's to choose.
