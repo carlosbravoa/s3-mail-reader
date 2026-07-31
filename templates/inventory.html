@@ -8,6 +8,10 @@
     across {{ total }} message{{ '' if total == 1 else 's' }} in {{ mb.label }}.
     Each one is a service that may still have the address on file — check whether
     it can be used to reset the account.</p>
+  <div class="page-actions">
+    <a class="head-link" href="{{ url_for('compose_form', **nav(mb, to=address)) }}">New message</a>
+    <a class="head-link" href="{{ url_for('refresh', **nav(mb, to=address)) }}">Refresh</a>
+  </div>
   <table class="inventory">
     <thead>
       <tr><th>Domain</th><th>Msgs</th><th>Last seen</th><th>Sample subjects</th></tr>

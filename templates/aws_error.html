@@ -1,0 +1,28 @@
+{# Standalone on purpose: base.html builds its dropdowns from the index, which
+   is exactly what just failed. #}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% include "theme.html" %}
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('inbox') }}">S3 Mail</a>
+  </header>
+  <main class="page compose">
+    <h1>{{ title }}</h1>
+    <p class="warnbox">{{ detail }}</p>
+    {% if command %}
+    <p class="lede">Fix it with:</p>
+    <pre class="fixcmd">{{ command }}</pre>
+    {% endif %}
+    <p class="lede">Nothing was changed. Once that is sorted,
+      <a href="{{ request.full_path }}">retry</a> — the reader picks new
+      credentials up without a restart.</p>
+  </main>
+</body>
+</html>

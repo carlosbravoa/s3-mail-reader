@@ -11,3 +11,6 @@ mailboxes.json
 reader-*.log
 
 __pycache__/
+
+# Notes for Claude Code — kept local, not part of the published project
+CLAUDE.md

@@ -29,6 +29,10 @@
             <a class="clear" href="{{ url_for('inbox', **nav(mb)) }}">clear</a>
           {%- endif %}
         </span>
+        <a class="head-link" title="Write a new message"
+           href="{{ url_for('compose_form', **nav(mb, to=address)) }}">New</a>
+        <a class="head-link" title="Check for new mail"
+           href="{{ url_for('refresh', **nav(mb, q=query, to=address)) }}">Refresh</a>
         <button type="submit" class="bulk-delete" disabled>Delete</button>
         <button type="button" class="pick-toggle">Select</button>
       </div>

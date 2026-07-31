@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Reply — {{ subject }}{% endblock %}
+{% set is_reply = entry is not none %}
+{% block title %}{{ 'Reply — ' + subject if is_reply else 'New message' }}{% endblock %}
 {% block content %}
 <main class="page compose">
-  <h1>Reply</h1>
+  <h1>{{ 'Reply' if is_reply else 'New message' }}</h1>
 
   {% if sandbox %}
   <p class="warnbox">This account is in the SES sending sandbox, so mail can only
@@ -18,12 +19,16 @@
     <input type="hidden" name="references" value="{{ references }}">
 
     <label>From
-      <input type="email" name="from" value="{{ from_addr }}" required>
+      <input type="email" name="from" value="{{ from_addr }}" list="from-options" required>
       <small>Must be an address at a domain verified in SES.</small>
     </label>
+    <datalist id="from-options">
+      {% for addr in from_options %}<option value="{{ addr }}"></option>{% endfor %}
+    </datalist>
 
     <label>To
-      <input type="email" name="to" value="{{ reply_to }}" required>
+      <input type="email" name="to" value="{{ reply_to }}" required
+             {{ '' if is_reply else 'autofocus' }}>
     </label>
 
     <label>Subject
@@ -31,12 +36,12 @@
     </label>
 
     <label>Message
-      <textarea name="body" rows="16" autofocus>{{ quoted }}</textarea>
+      <textarea name="body" rows="16" {{ 'autofocus' if is_reply }}>{{ quoted }}</textarea>
     </label>
 
     <div class="compose-actions">
       <button type="submit">Send</button>
-      <a href="{{ url_for('inbox', **nav(mb, sel=entry.key)) }}">Cancel</a>
+      <a href="{{ url_for('inbox', **nav(mb, sel=entry.key if is_reply else None)) }}">Cancel</a>
     </div>
   </form>
 </main>

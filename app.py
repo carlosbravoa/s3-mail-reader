@@ -14,6 +14,7 @@ import mimetypes
 import os
 import re
 import secrets
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from email.message import EmailMessage
@@ -24,7 +25,7 @@ from pathlib import Path
 import bleach
 import boto3
 from bleach.css_sanitizer import CSSSanitizer
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from flask import (Flask, Response, abort, jsonify, redirect, render_template,
                    request, url_for)
 
@@ -55,6 +56,112 @@ def check_csrf():
     if origin and origin not in (f"http://127.0.0.1:{PORT}",
                                  f"http://localhost:{PORT}"):
         abort(403)
+
+# --------------------------------------------------------------------------
+# AWS failures
+# --------------------------------------------------------------------------
+
+# Credentials are the usual reason this app cannot talk to S3: none configured,
+# an SSO session that lapsed overnight, or a role without access to the bucket.
+# A stack trace helps with none of those, so every boto failure is translated
+# into a page that names the problem and the command that fixes it.
+
+# Matched on class name rather than by import: which of these botocore defines
+# varies by version, and an ImportError at startup would defeat the purpose.
+_NO_CREDENTIALS = {"NoCredentialsError", "PartialCredentialsError",
+                   "CredentialRetrievalError", "InvalidConfigError"}
+_STALE_SSO = {"SSOError", "SSOTokenLoadError", "TokenRetrievalError",
+              "UnauthorizedSSOTokenError"}
+_UNREACHABLE = {"EndpointConnectionError", "ConnectTimeoutError",
+                "ReadTimeoutError", "ConnectionError"}
+
+_LOGIN = "aws configure          # or, for SSO: aws sso login"
+
+# S3 error codes that mean "the credentials themselves are the problem".
+_BAD_CREDS = {"ExpiredToken", "ExpiredTokenException", "RequestExpired",
+              "InvalidAccessKeyId", "InvalidClientTokenId", "AuthFailure",
+              "SignatureDoesNotMatch", "UnrecognizedClientException",
+              "InvalidToken", "TokenRefreshRequired"}
+_FORBIDDEN = {"AccessDenied", "AccessDeniedException", "AllAccessDisabled",
+              "InvalidAccessKeyId.NotFound", "Forbidden"}
+_WRONG_REGION = {"PermanentRedirect", "AuthorizationHeaderMalformed",
+                 "IllegalLocationConstraintException"}
+
+
+def explain_aws(exc):
+    """Turn a boto failure into a title, an explanation and a fix."""
+    name = type(exc).__name__
+
+    if isinstance(exc, ClientError):
+        err = exc.response.get("Error", {})
+        code = err.get("Code", "") or ""
+        message = err.get("Message", "") or str(exc)
+        if code in _BAD_CREDS:
+            return {"title": "AWS credentials rejected",
+                    "detail": f"AWS refused the request ({code}). The credentials "
+                              "are configured but expired or wrong.",
+                    "command": _LOGIN}
+        if code in _FORBIDDEN:
+            return {"title": "Access denied",
+                    "detail": f"The credentials work, but are not allowed to do "
+                              f"this: {message}",
+                    "command": "The reader needs s3:ListBucket and s3:GetObject on "
+                               "the bucket, s3:DeleteObject to delete, and "
+                               "ses:SendRawEmail to send."}
+        if code in _WRONG_REGION:
+            return {"title": "Wrong region",
+                    "detail": f"The bucket does not live in {REGION}: {message}",
+                    "command": "MAIL_REGION=<bucket-region> ./run.sh"}
+        if code in ("NoSuchBucket", "404"):
+            return {"title": "Bucket not found",
+                    "detail": f"No such bucket in {REGION}. Check the names in "
+                              "mailboxes.json.",
+                    "command": "aws s3 ls"}
+        return {"title": "AWS request failed",
+                "detail": f"{code}: {message}" if code else message,
+                "command": ""}
+
+    if name in _NO_CREDENTIALS:
+        return {"title": "No AWS credentials",
+                "detail": "The reader uses whatever credentials your AWS CLI has, "
+                          f"and found none it could use ({exc}).",
+                "command": _LOGIN}
+    if name in _STALE_SSO:
+        return {"title": "SSO session expired",
+                "detail": f"The cached SSO token is no longer valid ({exc}).",
+                "command": "aws sso login"}
+    if name == "ProfileNotFound":
+        return {"title": "AWS profile not found",
+                "detail": f"{exc}. AWS_PROFILE names a profile that is not in "
+                          "your AWS config.",
+                "command": "aws configure list-profiles"}
+    if name == "NoRegionError":
+        return {"title": "No AWS region",
+                "detail": "No region is configured and none was passed.",
+                "command": "MAIL_REGION=us-east-1 ./run.sh"}
+    if name in _UNREACHABLE:
+        return {"title": "Cannot reach AWS",
+                "detail": f"The request never got there ({exc}). This one is "
+                          "usually the network, not you.",
+                "command": ""}
+
+    return {"title": "AWS request failed", "detail": str(exc), "command": ""}
+
+
+@app.errorhandler(BotoCoreError)
+@app.errorhandler(ClientError)
+def aws_error(exc):
+    """Any boto failure that reaches a route renders as an explanation.
+
+    Deliberately not a base.html page: the header builds its dropdowns from the
+    index, so rendering it here would hit S3 again and fail a second time.
+    """
+    problem = explain_aws(exc)
+    if request.path.startswith("/api/"):
+        return jsonify(error=problem["title"], detail=problem["detail"],
+                       fix=problem["command"]), 503
+    return render_template("aws_error.html", **problem), 503
+
 
 # --------------------------------------------------------------------------
 # S3 access
@@ -274,6 +381,10 @@ class Mailbox:
         return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
 
 
+class ConfigError(Exception):
+    """mailboxes.json is missing or unusable. Nothing works without it."""
+
+
 def load_mailboxes():
     env_bucket = os.environ.get("MAIL_BUCKET")
     if env_bucket:
@@ -281,11 +392,41 @@ def load_mailboxes():
         return [Mailbox({"id": "env", "label": env_bucket,
                          "bucket": env_bucket,
                          "prefix": os.environ.get("MAIL_PREFIX", "")})]
-    specs = json.loads((HERE / "mailboxes.json").read_text())
+
+    path = HERE / "mailboxes.json"
+    if not path.exists():
+        # The first thing a fresh clone hits, so say what to do about it.
+        raise ConfigError(
+            "mailboxes.json is missing. Copy the example and edit it for your "
+            "buckets:\n"
+            "    cp mailboxes.example.json mailboxes.json\n"
+            "  Or skip the file and point the reader at one bucket:\n"
+            "    MAIL_BUCKET=your-bucket MAIL_PREFIX=inbox/ ./run.sh")
+    try:
+        specs = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"mailboxes.json is not valid JSON: {exc}")
+
+    if not isinstance(specs, list) or not specs:
+        raise ConfigError("mailboxes.json must be a non-empty list of mailboxes. "
+                          "See mailboxes.example.json.")
+    for i, spec in enumerate(specs, 1):
+        if not isinstance(spec, dict):
+            raise ConfigError(f"mailbox {i} in mailboxes.json is not an object.")
+        absent = [k for k in ("id", "bucket") if not spec.get(k)]
+        if absent:
+            raise ConfigError(f"mailbox {i} in mailboxes.json is missing "
+                              f"{' and '.join(absent)}.")
     return [Mailbox(s) for s in specs]
 
 
-MAILBOXES = load_mailboxes()
+try:
+    MAILBOXES = load_mailboxes()
+except ConfigError as exc:
+    # A traceback here helps nobody: the fix is always editing a config file.
+    print(f"Cannot start: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
 BY_ID = {m.id: m for m in MAILBOXES}
 
 
@@ -346,8 +487,13 @@ def parse_full(bucket, key):
     try:
         return email.message_from_bytes(fetch_raw(bucket, key),
                                         policy=email.policy.default)
-    except ClientError:
-        abort(404)
+    except ClientError as exc:
+        # Only a genuinely absent object is a 404. Anything else — expired
+        # credentials, a denied role — must reach the handler that explains it,
+        # or a credentials problem masquerades as missing mail.
+        if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "NoSuchVersion", "404"):
+            abort(404)
+        raise
 
 
 def extract_bodies(msg):
@@ -406,6 +552,7 @@ def inbox():
     query = request.args.get("q", "").strip()
     address = request.args.get("to", "").strip()
     selected_key = request.args.get("sel", "")
+    remember_address(address)
 
     entries = mb.get_index()
     total = len(entries)
@@ -485,7 +632,11 @@ def attachment(key, idx):
         return Response(
             payload,
             mimetype=guessed or "application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={"Content-Disposition": f'attachment; filename="{filename}"',
+                     # The type comes from the message, so it is attacker-chosen.
+                     # Disposition already forces a download; this stops a browser
+                     # second-guessing the type and rendering it anyway.
+                     "X-Content-Type-Options": "nosniff"},
         )
     abort(404)
 
@@ -495,7 +646,11 @@ def raw_source(key):
     mb = current_mailbox()
     if mb.get_entry(key) is None:
         abort(404)
-    return Response(fetch_raw(mb.bucket, key), mimetype="text/plain; charset=utf-8")
+    # content_type, not mimetype: mimetype appends its own charset, and passing a
+    # parameterised value there yields "charset=utf-8; charset=utf-8".
+    return Response(fetch_raw(mb.bucket, key),
+                    content_type="text/plain; charset=utf-8",
+                    headers={"X-Content-Type-Options": "nosniff"})
 
 
 @app.route("/inventory")
@@ -503,6 +658,7 @@ def inventory():
     """Senders grouped by domain — the account-audit view."""
     mb = current_mailbox()
     address = request.args.get("to", "").strip()
+    remember_address(address)
 
     entries = mb.get_index()
     if address:
@@ -528,6 +684,57 @@ def inventory():
     return render_template("inventory.html", rows=rows, total=len(entries),
                            mailboxes=MAILBOXES, mb=mb, address=address,
                            addresses=mb.addresses(), nav=_nav, query="")
+
+
+# The address dropdown is nominally a filter, but picking one also says which of
+# our addresses we are working as. Remembering the last one makes it the default
+# From for a message composed later, once the filter has been cleared.
+_last_address = None
+
+
+def remember_address(address):
+    global _last_address
+    if address:
+        _last_address = address
+
+
+def own_addresses():
+    """Addresses of ours that could plausibly send, most mail first.
+
+    Only inbound mailboxes count: in a sent/ mailbox there is no SES Received:
+    hop, so the recipient falls back to To: — the people we wrote to, not us.
+    """
+    counts = {}
+    for box in MAILBOXES:
+        if box.prefix == "sent/":
+            continue
+        for addr, count in box.addresses():
+            if "@" in addr:
+                counts[addr] = counts.get(addr, 0) + count
+    return sorted(counts, key=lambda a: (-counts[a], a))
+
+
+@app.route("/compose")
+def compose_form():
+    """A new message, not tied to anything in the archive."""
+    mb = current_mailbox()
+    options = own_addresses()
+
+    # Send as whichever address we are looking at: the one filtered on now, else
+    # the last one filtered on, else the busiest address of this mailbox — never
+    # an address belonging to some other mailbox while a plausible one exists.
+    address = request.args.get("to", "").strip()
+    local = [a for a, _ in mb.addresses() if a in options]
+    from_addr = next((a for a in (address, _last_address) if a and a in options),
+                     (local or options or [""])[0])
+
+    return render_template(
+        "compose.html", mb=mb, mailboxes=MAILBOXES, addresses=mb.addresses(),
+        address=address, query="", nav=_nav, entry=None,
+        reply_to="", from_addr=from_addr, from_options=options,
+        subject="", quoted="", message_id="", references="",
+        sandbox=not production_access(),
+    )
 
 
 @app.route("/reply/<path:key>")
@@ -559,6 +766,7 @@ def reply_form(key):
         reply_to=target,
         # Reply as the address it was sent to, not a hardcoded one.
         from_addr=entry["recipient"] or "",
+        from_options=own_addresses(),
         subject=subject, quoted=quoted,
         message_id=hdr(msg, "Message-ID"),
         references=" ".join(x for x in (hdr(msg, "References"),
@@ -737,7 +945,15 @@ def humansize(num):
 if __name__ == "__main__":
     for box in MAILBOXES:
         print(f"Indexing s3://{box.bucket}/{box.prefix} ...", flush=True)
-        print(f"  {len(box.get_index())} messages, "
-              f"{len(box.addresses())} addresses")
+        try:
+            print(f"  {len(box.get_index())} messages, "
+                  f"{len(box.addresses())} addresses")
+        except (BotoCoreError, ClientError) as exc:
+            # Serve anyway: the browser then explains the problem, and a Refresh
+            # after fixing the credentials indexes without a restart.
+            problem = explain_aws(exc)
+            print(f"  {problem['title']}: {problem['detail']}")
+            if problem["command"]:
+                print(f"  {problem['command']}")
     print(f"http://127.0.0.1:{PORT}")
     app.run(host="127.0.0.1", port=PORT, debug=False)

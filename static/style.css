@@ -1,4 +1,9 @@
+/* Light is the base palette. Dark takes over when the system asks for it —
+   unless the toggle has pinned light — and whenever the toggle has pinned dark.
+   The dark values appear twice because a media query cannot be folded into a
+   selector list; keep the two blocks in step. */
 :root {
+  color-scheme: light;
   --bg: #ffffff;
   --panel: #f7f7f8;
   --border: #e2e2e5;
@@ -9,7 +14,8 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #16171a;
     --panel: #1d1e22;
     --border: #2e3036;
@@ -18,6 +24,18 @@
     --accent: #6ea0ff;
     --warn: #e0805a;
   }
+}
+
+/* Must follow the media query: identical specificity, so source order decides. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #16171a;
+  --panel: #1d1e22;
+  --border: #2e3036;
+  --text: #e6e6ea;
+  --muted: #9a9aa5;
+  --accent: #6ea0ff;
+  --warn: #e0805a;
 }
 
 * { box-sizing: border-box; }
@@ -54,7 +72,19 @@ a:hover { text-decoration: underline; }
 }
 .filters select { max-width: 220px; }
 .filters input { flex: 1; min-width: 160px; max-width: 340px; }
-.topbar nav { display: flex; gap: 14px; }
+.topbar nav { display: flex; gap: 14px; align-items: center; }
+
+.theme-toggle {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ---- two-pane layout ---- */
 .split {
@@ -81,7 +111,21 @@ a:hover { text-decoration: underline; }
   z-index: 1;
   background: var(--panel);
 }
-.list-head .count { flex: 1; }
+.list-head .count { flex: 1; min-width: 0; }
+
+.head-link {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.head-link:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+/* Selecting messages is a mode; leaving it is the only other thing to do in it. */
+.picking .head-link { display: none; }
+
+.page-actions { display: flex; gap: 10px; margin: 0 0 16px; }
 
 .bulk-delete,
 .pick-toggle {
@@ -243,6 +287,16 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
 }
 .compose-actions button:hover { filter: brightness(1.1); }
+
+.fixcmd {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 0 0 20px;
+  overflow-x: auto;
+  font: 13px/1.5 ui-monospace, monospace;
+}
 
 .warnbox {
   padding: 10px 14px;

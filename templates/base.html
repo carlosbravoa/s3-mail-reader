@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}S3 Mail{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% include "theme.html" %}
 </head>
 <body>
   <header class="topbar">
@@ -31,7 +32,8 @@
     <nav>
       <a href="{{ url_for('inbox', **nav(mb, to=address)) }}">Inbox</a>
       <a href="{{ url_for('inventory', **nav(mb, to=address)) }}">Inventory</a>
-      <a href="{{ url_for('refresh', **nav(mb)) }}">Refresh</a>
+      {# New message and Refresh live in the list header, next to the mail they act on. #}
+      <button type="button" id="theme-toggle" class="theme-toggle">Auto</button>
     </nav>
   </header>
 
@@ -48,6 +50,45 @@
         el.form.submit();
       });
     });
+
+    // Theme cycles auto → light → dark, so the system setting stays reachable
+    // rather than being a one-way door out of it.
+    (function () {
+      var btn = document.getElementById('theme-toggle');
+      if (!btn) return;
+      var order = ['auto', 'light', 'dark'];
+      var labels = { auto: 'Auto', light: 'Light', dark: 'Dark' };
+
+      function stored() {
+        try {
+          var t = localStorage.getItem('theme');
+          if (t === 'light' || t === 'dark') return t;
+        } catch (e) {}
+        return 'auto';
+      }
+
+      function apply(mode) {
+        if (mode === 'auto') {
+          delete document.documentElement.dataset.theme;
+        } else {
+          document.documentElement.dataset.theme = mode;
+        }
+        btn.textContent = labels[mode];
+        btn.title = mode === 'auto'
+          ? 'Theme: following the system — click for light'
+          : 'Theme: ' + mode + ' — click for ' +
+            order[(order.indexOf(mode) + 1) % order.length];
+        try {
+          mode === 'auto' ? localStorage.removeItem('theme')
+                          : localStorage.setItem('theme', mode);
+        } catch (e) {}
+      }
+
+      apply(stored());
+      btn.addEventListener('click', function () {
+        apply(order[(order.indexOf(stored()) + 1) % order.length]);
+      });
+    })();
   </script>
 </body>
 </html>
