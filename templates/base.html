@@ -8,6 +8,8 @@
   {% include "theme.html" %}
 </head>
 <body>
+  <div id="nav-progress" aria-hidden="true"></div>
+
   <header class="topbar">
     <a class="brand" href="{{ url_for('inbox', **nav(mb)) }}">S3 Mail</a>
 
@@ -40,6 +42,43 @@
   {% block content %}{% endblock %}
 
   <script>
+    // Every link here costs a round trip to S3 — listing a bucket, ranged GETs
+    // for headers, a full object for a body. Announce the navigation as soon as
+    // it starts instead of leaving the page looking inert.
+    var navProgress = (function () {
+      var bar = document.getElementById('nav-progress');
+      var timer;
+
+      // Under ~150ms the bar is just a flash; past it, the silence is the bug.
+      function start() { clearTimeout(timer); timer = setTimeout(function () { bar.classList.add('on'); }, 150); }
+      function stop() { clearTimeout(timer); bar.classList.remove('on'); }
+
+      function plainClick(ev) {
+        return !ev.defaultPrevented && ev.button === 0 &&
+               !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey;
+      }
+
+      document.addEventListener('click', function (ev) {
+        if (!plainClick(ev)) return;
+        var a = ev.target.closest('a[href]');
+        // New tabs and attachment downloads leave this page where it is, so a
+        // bar that only stops on unload would spin forever.
+        if (!a || a.target || a.hasAttribute('download') || a.hasAttribute('data-download')) return;
+        var href = a.getAttribute('href');
+        if (!href || href.charAt(0) === '#') return;
+        start();
+      });
+
+      document.addEventListener('submit', function (ev) {
+        if (!ev.defaultPrevented) start();
+      });
+
+      // Back/forward restores the page from the bfcache mid-animation otherwise.
+      window.addEventListener('pageshow', stop);
+
+      return { start: start, stop: stop, plainClick: plainClick };
+    })();
+
     // Switching mailbox invalidates the address filter, since the addresses
     // belong to the mailbox you are leaving.
     document.querySelectorAll('[data-autosubmit]').forEach(function (el) {
@@ -47,6 +86,8 @@
         if (el.name === 'mb') {
           el.form.querySelector('[name=to]').value = '';
         }
+        // form.submit() fires no submit event, so the bar needs telling.
+        navProgress.start();
         el.form.submit();
       });
     });

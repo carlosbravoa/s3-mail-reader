@@ -67,6 +67,7 @@
   </section>
 
   <section class="reader">
+    <div class="pane-loading" hidden><span class="spinner"></span> Loading message…</div>
     {% if message %}
     {% set e = message.entry %}
     <div class="headers">
@@ -105,7 +106,7 @@
       {% if message.attachments %}
       <div class="attachments">
         {% for a in message.attachments %}
-        <a href="{{ url_for('attachment', key=e.key, idx=a.idx, mb=mb.id) }}">
+        <a data-download href="{{ url_for('attachment', key=e.key, idx=a.idx, mb=mb.id) }}">
           {{ a.filename }} <span class="size">({{ a.size|humansize }})</span>
         </a>
         {% endfor %}
@@ -116,8 +117,13 @@
         you opened this message.</p>
       {% endif %}
     </div>
-    <iframe class="body" sandbox="allow-popups allow-popups-to-escape-sandbox"
-            src="{{ url_for('message_body', key=e.key, mb=mb.id, images=1 if message.allow_images else None) }}"></iframe>
+    {# The body is a second request; the inline onload is set with the element,
+       so it cannot be missed by a frame that loads before the scripts run. #}
+    <div class="body-wrap loading">
+      <iframe class="body" sandbox="allow-popups allow-popups-to-escape-sandbox"
+              onload="this.parentNode.classList.remove('loading')"
+              src="{{ url_for('message_body', key=e.key, mb=mb.id, images=1 if message.allow_images else None) }}"></iframe>
+    </div>
     {% else %}
     <div class="placeholder">Select a message.</div>
     {% endif %}
@@ -177,6 +183,29 @@
         ev.preventDefault();
         box.checked = !box.checked;
         sync();
+      });
+    });
+
+    // Opening a message reads the whole object out of S3, which is the slowest
+    // thing the app does. Mark the row and mask the reader the instant it is
+    // clicked. Registered after the picking handler above so that its
+    // preventDefault (no navigation is coming) suppresses this one.
+    var rows = Array.prototype.slice.call(form.querySelectorAll('li a'));
+    var pane = document.querySelector('.pane-loading');
+    rows.forEach(function (link) {
+      link.addEventListener('click', function (ev) {
+        if (!navProgress.plainClick(ev) || link.target) return;
+        link.closest('li').classList.add('loading');
+        if (pane) pane.hidden = false;
+      });
+    });
+
+    // Coming back through the bfcache restores the DOM exactly as it was left,
+    // spinners included.
+    window.addEventListener('pageshow', function () {
+      if (pane) pane.hidden = true;
+      form.querySelectorAll('li.loading').forEach(function (li) {
+        li.classList.remove('loading');
       });
     });
 
